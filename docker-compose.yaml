@@ -1,0 +1,22 @@
+services:
+  laya:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CUDA_ARCHITECTURES: "61"
+    gpus: all
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models:ro
+    command:
+      [
+        "laya",
+        "serve",
+        "/models/laya_english_f16.gguf",
+        "--device", "cuda",
+        "--cuda-graph",
+        "--port", "8080",
+      ]
+    restart: unless-stopped
