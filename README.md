@@ -517,7 +517,85 @@ cmake --build build -j$(sysctl -n hw.logicalcpu)
 
 ---
 
-### 3. Running the Test Suite
+### 3. Docker and Docker Compose
+
+This repository also includes a CUDA Docker deployment for the standalone Laya
+System 1 decision engine. The deployment builds the native `laya` executable
+from `ggmlc`, mounts GGUF files from `models/`, and exposes a TypeSafe-compatible
+HTTP API.
+
+The included Compose configuration targets NVIDIA Pascal compute capability
+`61`, which is suitable for a GTX 1050. Change `CUDA_ARCHITECTURES` in
+`../docker-compose.yaml` for a different GPU.
+
+From the repository's deployment root (the directory containing `Dockerfile`
+and `docker-compose.yaml`):
+
+```bash
+# Confirm the model is present
+ls -lh ggmlc/models/laya_english_f16.gguf
+
+# Build and start the CUDA service
+docker compose up --build
+```
+
+The service listens on `http://localhost:8081` and maps to port `8080` inside
+the container. The Compose file currently starts:
+
+```text
+/models/laya_english_f16.gguf
+```
+
+To use the Q8 model, change the model path in `docker-compose.yaml` to:
+
+```text
+/models/laya_english_q8_0.gguf
+```
+
+Useful checks:
+
+```bash
+curl http://localhost:8081/health
+curl http://localhost:8081/v1/models
+```
+
+The TypeSafe-compatible decision endpoint is:
+
+```text
+POST http://localhost:8081/v1/systemone
+```
+
+`POST /v1/decide` accepts the same request and response format. Requests use a
+state, a model alias, and typed questions:
+
+```bash
+curl http://localhost:8081/v1/systemone \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "jev-latest",
+    "state": {"body": "We were billed twice. Please refund the duplicate."},
+    "questions": {
+      "refund_requested": {
+        "type": "noul",
+        "instructions": "Does the user explicitly request a refund?"
+      }
+    }
+  }'
+```
+
+For Python clients, install Jev's compatible SDK with `pip install typesafe-sdk`
+and point `TypeSafeClient` at `http://127.0.0.1:8081`. The local server accepts
+`api_key="local"` when authentication is disabled.
+
+Stop the service with:
+
+```bash
+docker compose down
+```
+
+---
+
+### 4. Running the Test Suite
 
 ```powershell
 # Run standard CPU test suite (CI mode)
@@ -536,7 +614,7 @@ pytest -v
 1. **[Laya System 1 Decision Engine (`examples/laya`)](examples/laya/README.md)**:
    - Local open-weight reproduction of Jev-style **System 1** decisions: typed `choice` / `score` / `noul` questions scored in one parallel pass. English ModernBERT-large 421M, plus mmBERT multilingual, the typed-decisions specialist, and Kev 0.5B / 0.8B / 4B (Qwen2.5 and Qwen3.5 Gated DeltaNet) via a GGUF-baked `ggmlc.decision` recipe. GGUFs: [mys/laya-GGUF](https://huggingface.co/mys/laya-GGUF), [mys/kev-0.5b-GGUF](https://huggingface.co/mys/kev-0.5b-GGUF), [mys/kev-0.8b-GGUF](https://huggingface.co/mys/kev-0.8b-GGUF), [mys/kev-4b-GGUF](https://huggingface.co/mys/kev-4b-GGUF). Already-distributed Laya GGUFs without that key keep the original Laya encoder.
    - Domain pipeline in C++: GGUF-baked `ggmlc.decision` sequence/postprocess (chat-template analogue) so new architectures integrate without a family switch. Already-distributed Laya GGUFs without that key keep the original Laya encoder. `--device auto`, language routing (`--models-dir`), stdin JSON-RPC (`daemon`), and an embedded Decision Studio plus TypeSafe-compatible `POST /v1/systemone` (`serve`).
-   - GGUFs: [mys/laya-GGUF](https://huggingface.co/mys/laya-GGUF) · [mys/laya-multilingual-GGUF](https://huggingface.co/mys/laya-multilingual-GGUF) · [mys/laya-typed-decisions-GGUF](https://huggingface.co/mys/laya-typed-decisions-GGUF). Binaries: [GitHub `latest` release](https://github.com/monatis/ggmlc/releases/latest) (macOS Metal, Linux/Windows CUDA sm80/sm86/sm89).
+   - GGUFs: [mys/laya-GGUF](https://huggingface.co/mys/laya-GGUF), including the credited [English F16 model file](https://huggingface.co/mys/laya-GGUF?show_file_info=laya_english_f16.gguf); [mys/laya-multilingual-GGUF](https://huggingface.co/mys/laya-multilingual-GGUF); [mys/laya-typed-decisions-GGUF](https://huggingface.co/mys/laya-typed-decisions-GGUF). Binaries: [GitHub `latest` release](https://github.com/monatis/ggmlc/releases/latest) (macOS Metal, Linux/Windows CUDA sm80/sm86/sm89).
    - RTX 4050 Laptop: **~25 ms** / decision (`laya.exe` CUDA, pad-to-live S=84) and **~143 ms** for a 7-question email preset (one `B=7, S=124` forward). Official PyTorch Agent is 57 ms / 143 ms. Kev 0.5B / 0.8B F16 on the same preset: **102 ms** / **465 ms**, matching or beating the official PyTorch forwards (109 ms / 494 ms). No autoregressive tokens.
 2. **[Tab Completion Engine (`examples/tab_completion`)](examples/tab_completion/README.md)**:
    - 100% offline continuous latent diffusion code autocompletion engine powered by **PlaidQ**.
